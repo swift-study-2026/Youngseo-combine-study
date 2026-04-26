@@ -1,0 +1,18 @@
+cat <<EOF > .gitignore
+# Xcode
+DerivedData/
+build/
+
+# User-specific
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcuserdatad/
+xcuserdata/
+
+# SwiftPM
+.build/
+Packages/
+
+# macOS
+.DS_Store
+EOF
