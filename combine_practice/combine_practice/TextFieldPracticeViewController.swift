@@ -6,7 +6,10 @@
 //
 
 import UIKit
+
 import Combine
+import SnapKit
+import Then
 
 final class TextFieldPracticeViewController: UIViewController {
 
@@ -17,11 +20,31 @@ final class TextFieldPracticeViewController: UIViewController {
 
     // MARK: - UI Components
     
-    private let textField = UITextField()
-    private let emailTextField = UITextField()
-    private let passwordTextField = UITextField()
-    private let button = UIButton()
-    private let indicator = UIActivityIndicatorView(style: .medium)
+    private let textField = UITextField().then {
+        $0.borderStyle = .roundedRect
+        $0.placeholder = "검색어 입력 (5글자 이상)"
+    }
+
+    private let emailTextField = UITextField().then {
+        $0.borderStyle = .roundedRect
+        $0.placeholder = "이메일"
+    }
+
+    private let passwordTextField = UITextField().then {
+        $0.borderStyle = .roundedRect
+        $0.placeholder = "비밀번호 (6자 이상)"
+    }
+
+    private let button = UIButton().then {
+        $0.setTitle("버튼", for: .normal)
+        $0.backgroundColor = .black
+        $0.layer.cornerRadius = 8
+        $0.isEnabled = false
+    }
+
+    private let indicator = UIActivityIndicatorView(style: .medium).then {
+        $0.hidesWhenStopped = true
+    }
 
     // MARK: - Lifecycle
     
@@ -36,102 +59,100 @@ final class TextFieldPracticeViewController: UIViewController {
     
     private func setUI() {
         view.backgroundColor = .white
-
-        [textField, emailTextField, passwordTextField].forEach {
-            $0.borderStyle = .roundedRect
-        }
-
-        textField.placeholder = "Search"
-        emailTextField.placeholder = "Email"
-        passwordTextField.placeholder = "Password"
-
-        button.setTitle("Button", for: .normal)
-        button.backgroundColor = .black
-        button.isEnabled = false
     }
 
     private func setLayout() {
-        let stack = UIStackView(arrangedSubviews: [
-            textField,
-            emailTextField,
-            passwordTextField,
-            button,
-            indicator
-        ])
+        [textField, emailTextField, passwordTextField, button, indicator].forEach {
+            view.addSubview($0)
+        }
 
-        stack.axis = .vertical
-        stack.spacing = 12
+        textField.snp.makeConstraints {
+            $0.top.equalTo(view.safeAreaLayoutGuide).offset(40)
+            $0.leading.trailing.equalToSuperview().inset(20)
+            $0.height.equalTo(44)
+        }
 
-        view.addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        emailTextField.snp.makeConstraints {
+            $0.top.equalTo(textField.snp.bottom).offset(20)
+            $0.leading.trailing.equalTo(textField)
+            $0.height.equalTo(44)
+        }
 
-        NSLayoutConstraint.activate([
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
-        ])
+        passwordTextField.snp.makeConstraints {
+            $0.top.equalTo(emailTextField.snp.bottom).offset(12)
+            $0.leading.trailing.equalTo(textField)
+            $0.height.equalTo(44)
+        }
+
+        button.snp.makeConstraints {
+            $0.top.equalTo(passwordTextField.snp.bottom).offset(24)
+            $0.leading.trailing.equalTo(textField)
+            $0.height.equalTo(50)
+        }
+
+        indicator.snp.makeConstraints {
+            $0.top.equalTo(button.snp.bottom).offset(20)
+            $0.centerX.equalToSuperview()
+        }
     }
 
     // MARK: - Binding
     
     private func bind() {
 
-        textField.publisher(for: \.text)
-            .compactMap { $0 }
+        let inputPublisher =
+        NotificationCenter.default.publisher(
+            for: UITextField.textDidChangeNotification,
+            object: textField
+        )
+        .compactMap { ($0.object as? UITextField)?.text }
 
-            // Step 1
+        inputPublisher
+
             .handleEvents(receiveOutput: {
                 print("1️⃣ 입력:", $0)
             })
 
-            // Step 5
             .filter { !$0.isEmpty }
             .handleEvents(receiveOutput: {
-                print("5️⃣ 필터 통과:", $0)
+                print("5️⃣ 필터:", $0)
             })
 
-            // Step 2
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .removeDuplicates()
             .handleEvents(receiveOutput: {
                 print("2️⃣ 최적화:", $0)
             })
 
-            // Step 3
             .map { $0.count >= 5 }
+            .receive(on: RunLoop.main)
             .handleEvents(receiveOutput: {
                 print("3️⃣ 버튼 상태:", $0)
             })
-
             .sink { [weak self] isEnabled in
                 self?.button.isEnabled = isEnabled
+                self?.button.backgroundColor = isEnabled ? .blue : .black
             }
             .store(in: &cancellables)
 
 
-        // Step 4 — 검증 (CombineLatest)
-        let emailPublisher = emailTextField.publisher(for: \.text)
-            .compactMap { $0 }
-
-        let passwordPublisher = passwordTextField.publisher(for: \.text)
-            .compactMap { $0 }
+        let emailPublisher = emailTextField.publisher(for: \.text).compactMap { $0 }
+        let passwordPublisher = passwordTextField.publisher(for: \.text).compactMap { $0 }
 
         Publishers.CombineLatest(emailPublisher, passwordPublisher)
-            .map { email, password in
-                email.contains("@") && password.count >= 6
-            }
+            .map { $0.contains("@") && $1.count >= 6 }
+            .receive(on: RunLoop.main)
             .handleEvents(receiveOutput: {
                 print("4️⃣ 로그인 가능:", $0)
             })
             .sink { [weak self] isValid in
+                self?.button.isEnabled = isValid
                 self?.button.backgroundColor = isValid ? .blue : .black
             }
             .store(in: &cancellables)
 
 
-        // Step 6 — 사이드 이펙트
-        textField.publisher(for: \.text)
-            .compactMap { $0 }
+        inputPublisher
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
 
             .handleEvents(receiveOutput: { [weak self] _ in
@@ -150,15 +171,16 @@ final class TextFieldPracticeViewController: UIViewController {
             .store(in: &cancellables)
 
 
-        // Step 7 — 상태 전파
         loading
             .handleEvents(receiveOutput: {
-                print("7️⃣ 로딩 상태:", $0)
+                print("7️⃣ 상태:", $0)
             })
             .sink { [weak self] isLoading in
-                isLoading
-                ? self?.indicator.startAnimating()
-                : self?.indicator.stopAnimating()
+                if isLoading {
+                    self?.indicator.startAnimating()
+                } else {
+                    self?.indicator.stopAnimating()
+                }
             }
             .store(in: &cancellables)
     }
